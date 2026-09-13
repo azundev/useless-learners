@@ -1,6 +1,6 @@
 const SUPABASE_URL = 'https://tecarasdwggresobjoas.supabase.co';
 const defaults = { keywords: ['ads', 'advertisement', 'spam', 'scam', 'promotion', 'promotional', 'unsubscribe'], aiEnabled: true, aiProvider: 'gemini', aiModel: '', aiKey: '', maxResults: 50, supabaseKey: '', supabaseEmail: '', supabaseSession: null };
-let settings = { ...defaults }, messages = [];
+let settings = { ...defaults }, messages = [], scanPollTimer;
 
 const $ = (id) => document.getElementById(id);
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,8 +17,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('supabaseEmail').value = settings.supabaseEmail || '';
   $('supabaseKey').value = settings.supabaseKey || '';
   updateCloudState();
-  if (settings.supabaseSession && settings.supabaseKey) await loadCloudSettings();
+  if (settings.supabaseSession && settings.supabaseKey) {
+    try { await loadCloudSettings(); }
+    catch (error) { setCloudStatus(error.message, true); }
+  }
+  await restoreScanJob();
 });
+
+async function restoreScanJob() {
+  const { scanJob } = await chrome.storage.local.get('scanJob');
+  if (!scanJob || Date.now() - (scanJob.completedAt || scanJob.startedAt || 0) > 10 * 60 * 1000) return;
+  if (scanJob.status === 'running') {
+    setBusy(true, 'Signing in and scanning Gmail…');
+    await waitForScanJob(scanJob.id);
+  } else if (scanJob.status === 'complete') {
+    finishScan(scanJob.data);
+  } else if (scanJob.status === 'failed') {
+    setBusy(false, scanJob.error || 'Gmail scan failed.', true);
+  }
+}
+
+async function waitForScanJob(jobId) {
+  clearTimeout(scanPollTimer);
+  const { scanJob } = await chrome.storage.local.get('scanJob');
+  if (!scanJob || scanJob.id !== jobId) return;
+  if (scanJob.status === 'complete') return finishScan(scanJob.data);
+  if (scanJob.status === 'failed') return setBusy(false, scanJob.error || 'Gmail scan failed.', true);
+  scanPollTimer = setTimeout(() => waitForScanJob(jobId), 400);
+}
+
+function finishScan(data) {
+  messages = data || [];
+  renderMessages();
+  setBusy(false, `${messages.length} candidate${messages.length === 1 ? '' : 's'} found.`);
+  $('results').hidden = false;
+}
 
 function renderKeywords() {
   $('keywordList').replaceChildren(...settings.keywords.map((keyword, index) => {
@@ -54,15 +87,59 @@ async function supabaseAuth(signUp) {
       throw new Error(`Supabase: ${detail}`);
     }
     if (signUp && !data.access_token) { setCloudStatus('Account created. Check your email confirmation link, then use “Sign in & sync”.', false, true); return; }
-    settings.supabaseSession = data; settings.supabaseKey = key; settings.supabaseEmail = email; await chrome.storage.local.set(settings); updateCloudState(); await loadCloudSettings(); setBusy(false, 'Supabase connected; settings synced.');
+    settings.supabaseSession = { ...data, expires_at: data.expires_at || Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600) }; settings.supabaseKey = key; settings.supabaseEmail = email; await chrome.storage.local.set(settings); updateCloudState(); await loadCloudSettings(); setBusy(false, 'Supabase connected; settings synced.');
     setCloudStatus('Connected and synced.', false, true);
   } catch (error) { setCloudStatus(error.message, true); setBusy(false, error.message, true); }
+}
+
+async function refreshSupabaseSession(force = false) {
+  const session = settings.supabaseSession;
+  if (!session?.refresh_token || !settings.supabaseKey) return false;
+  const expiresAt = Number(session.expires_at || 0) * 1000;
+  if (!force && expiresAt > Date.now() + 60_000) return true;
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { apikey: settings.supabaseKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: session.refresh_token })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    settings.supabaseSession = null;
+    await chrome.storage.local.set({ supabaseSession: null });
+    updateCloudState();
+    throw new Error('Your Supabase session expired. Sign in again to reconnect cloud sync.');
+  }
+
+  settings.supabaseSession = {
+    ...session,
+    ...data,
+    refresh_token: data.refresh_token || session.refresh_token,
+    expires_at: data.expires_at || Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600)
+  };
+  await chrome.storage.local.set({ supabaseSession: settings.supabaseSession });
+  updateCloudState();
+  return true;
+}
+
+async function supabaseRequest(url, init = {}) {
+  await refreshSupabaseSession();
+  const session = settings.supabaseSession;
+  if (!session?.access_token) throw new Error('Your Supabase session expired. Sign in again to reconnect cloud sync.');
+  const headers = { ...(init.headers || {}), apikey: settings.supabaseKey, Authorization: `Bearer ${session.access_token}` };
+  let response = await fetch(url, { ...init, headers });
+  if (response.status === 401 && session.refresh_token) {
+    await refreshSupabaseSession(true);
+    const refreshed = settings.supabaseSession;
+    response = await fetch(url, { ...init, headers: { ...(init.headers || {}), apikey: settings.supabaseKey, Authorization: `Bearer ${refreshed.access_token}` } });
+  }
+  return response;
 }
 
 async function loadCloudSettings() {
   try {
     const userId = settings.supabaseSession?.user?.id; if (!userId) return;
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/user_settings?select=*&user_id=eq.${encodeURIComponent(userId)}`, { headers: { apikey: settings.supabaseKey, Authorization: `Bearer ${settings.supabaseSession.access_token}` } });
+    const response = await supabaseRequest(`${SUPABASE_URL}/rest/v1/user_settings?select=*&user_id=eq.${encodeURIComponent(userId)}`);
     const rows = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(supabaseError(rows, response.status));
     if (rows[0]) { settings = { ...settings, keywords: rows[0].keywords || settings.keywords, aiProvider: rows[0].ai_provider || settings.aiProvider, aiModel: rows[0].ai_model || settings.aiModel, maxResults: rows[0].max_results || settings.maxResults }; await chrome.storage.local.set(settings); renderKeywords(); syncForm(); }
@@ -73,7 +150,7 @@ async function loadCloudSettings() {
 
 async function saveCloudSettings() {
   const userId = settings.supabaseSession?.user?.id; if (!userId || !settings.supabaseKey) return;
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/user_settings`, { method: 'POST', headers: { apikey: settings.supabaseKey, Authorization: `Bearer ${settings.supabaseSession.access_token}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ user_id: userId, keywords: settings.keywords, ai_provider: settings.aiProvider, ai_model: settings.aiModel || null, max_results: settings.maxResults, updated_at: new Date().toISOString() }) });
+  const response = await supabaseRequest(`${SUPABASE_URL}/rest/v1/user_settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ user_id: userId, keywords: settings.keywords, ai_provider: settings.aiProvider, ai_model: settings.aiModel || null, max_results: settings.maxResults, updated_at: new Date().toISOString() }) });
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(supabaseError(data, response.status)); }
 }
 
@@ -91,11 +168,11 @@ async function scan() {
   try {
     const extensionRuntime = globalThis.chrome?.runtime;
     if (!extensionRuntime?.getManifest || !extensionRuntime?.sendMessage) throw new Error('This page is not running as a loaded browser extension. Open chrome://extensions (or brave://extensions), load the extension folder, then open it from the Extensions toolbar menu.');
-    if (extensionRuntime.getManifest().oauth2.client_id.startsWith('REPLACE_WITH_')) throw new Error('Add your Google OAuth client ID to manifest.json, then reload the unpacked extension.');
+    if (extensionRuntime.getManifest().oauth2.client_id.startsWith('REPLACE_WITH_')) throw new Error('Create a Google OAuth client of type Chrome Extension, put its client ID in manifest.json → oauth2.client_id, then reload the unpacked extension. Do not use the Supabase Web client ID.');
     await persist(); setBusy(true, 'Signing in and scanning Gmail…');
     const response = await chrome.runtime.sendMessage({ type: 'scan', settings });
-    if (!response?.ok) return setBusy(false, response?.error || 'The background service worker did not respond.', true);
-    messages = response.data; renderMessages(); setBusy(false, `${messages.length} candidate${messages.length === 1 ? '' : 's'} found.`); $('results').hidden = false;
+    if (!response?.ok || !response.jobId) return setBusy(false, response?.error || 'The background service worker did not start the scan.', true);
+    await waitForScanJob(response.jobId);
   } catch (error) { setBusy(false, error.message || String(error), true); }
 }
 function renderMessages() {

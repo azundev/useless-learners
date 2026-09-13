@@ -11,12 +11,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": [
-    "identity",
-    "storage",
-    "alarms",
-    "notifications"
-  ],
+  "permissions": ["identity", "storage"],
   "host_permissions": [
     "https://gmail.googleapis.com/*",
     "https://generativelanguage.googleapis.com/*",
@@ -24,7 +19,7 @@
     "https://tecarasdwggresobjoas.supabase.co/*"
   ],
   "oauth2": {
-    "client_id": "36900979677-5b35h019k4vjcvfii3ppv3t4e8gml207.apps.googleusercontent.com",
+    "client_id": "36900979677-c8gt804smmrombcnlkvttg5dbopekbap.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/gmail.modify"]
   }
 }

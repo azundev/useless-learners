@@ -1,66 +1,18 @@
-import { 
-  snoozeThread, 
-  getSnoozedThreads, 
-  clearSnoozedThread, 
-  checkTrashReminder,
-  getEmailLists,
-  addToList,
-  removeFromList,
-  evaluateSenderRules
-} from './utilities.js';
-
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
-// Setup periodic alarm for Trash Reminders on installation
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('periodic_trash_check', { periodInMinutes: 1440 });
-});
-
-// Alarm Listener for Snooze Reminders & Periodic Trash Checks
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'periodic_trash_check') {
-    await checkTrashReminder(7);
-  } else if (alarm.name.startsWith('snooze_')) {
-    const threadId = alarm.name.replace('snooze_', '');
-    const snoozedItems = await getSnoozedThreads();
-    const target = snoozedItems.find(item => item.threadId === threadId);
-
-    if (target) {
-      chrome.notifications.create(`notify_${threadId}`, {
-        type: 'basic',
-        iconUrl: 'icon.png',
-        title: 'Read-Later Reminder',
-        message: `Time to revisit: "${target.subject}"`,
-        priority: 2
-      });
-      await clearSnoozedThread(threadId);
-    }
-  }
-});
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'scan') {
+    const jobId = crypto.randomUUID();
+    chrome.storage.local.set({ scanJob: { id: jobId, status: 'running', startedAt: Date.now() } });
+    runScanJob(jobId, message.settings);
+    sendResponse({ ok: true, jobId });
+    return false;
+  }
+
   (async () => {
     try {
-      if (message.type === 'scan') {
-        sendResponse({ ok: true, data: await scan(message.settings) });
-      } else if (message.type === 'trash') {
-        sendResponse({ ok: true, data: await trash(message.ids) });
-      } else if (message.type === 'snooze') {
-        await snoozeThread(message.threadId, message.subject, message.days);
-        sendResponse({ ok: true });
-      } else if (message.type === 'get_snoozed') {
-        sendResponse({ ok: true, data: await getSnoozedThreads() });
-      } else if (message.type === 'get_lists') {
-        sendResponse({ ok: true, data: await getEmailLists() });
-      } else if (message.type === 'add_list') {
-        await addToList(message.listType, message.entry);
-        sendResponse({ ok: true });
-      } else if (message.type === 'remove_list') {
-        await removeFromList(message.listType, message.entry);
-        sendResponse({ ok: true });
-      } else {
-        throw new Error('Unknown request');
-      }
+      if (message.type === 'trash') sendResponse({ ok: true, data: await trash(message.ids) });
+      else throw new Error('Unknown request');
     } catch (error) {
       sendResponse({ ok: false, error: error.message });
     }
@@ -68,10 +20,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
+async function runScanJob(jobId, settings) {
+  try {
+    const data = await scan(settings);
+    await chrome.storage.local.set({ scanJob: { id: jobId, status: 'complete', data, completedAt: Date.now() } });
+  } catch (error) {
+    await chrome.storage.local.set({ scanJob: { id: jobId, status: 'failed', error: error.message, completedAt: Date.now() } });
+  }
+}
+
 async function token() {
-  const result = await chrome.identity.getAuthToken({ interactive: true });
-  if (!result?.token) throw new Error('Google sign-in did not return an access token.');
-  return result.token;
+  try {
+    const result = await chrome.identity.getAuthToken({ interactive: true });
+    if (!result?.token) throw new Error('Google sign-in did not return an access token.');
+    return result.token;
+  } catch (firstError) {
+    // A failed OAuth attempt can leave an invalid token in Chrome's cache.
+    try { await chrome.identity.clearAllCachedAuthTokens(); } catch (_) {}
+    try {
+      const result = await chrome.identity.getAuthToken({ interactive: true });
+      if (!result?.token) throw new Error('Google sign-in did not return an access token.');
+      return result.token;
+    } catch (secondError) {
+      throw new Error(`Google OAuth failed. manifest.json oauth2.client_id must be a Chrome Extension OAuth client (not the Supabase Web client). ${secondError.message || firstError.message}`);
+    }
+  }
 }
 
 async function gmail(path, init = {}) {
@@ -92,42 +65,15 @@ async function scan(settings) {
   if (!keywords.length) throw new Error('Choose at least one keyword.');
   const q = `({${keywords.map(escapeGmailQuery).join(' OR ')}}) -in:trash -in:spam`;
   const list = await gmail(`/messages?maxResults=${Math.min(settings.maxResults || 50, 100)}&q=${encodeURIComponent(q)}`);
-  
-  const candidateMessages = [];
-  const preProcessedResults = [];
-
+  const messages = [];
   for (const item of list.messages || []) {
     const message = await gmail(`/messages/${item.id}?format=full`);
     const parsed = parseMessage(message);
     const matched = keywords.filter((word) => `${parsed.subject} ${parsed.sender} ${parsed.body}`.toLowerCase().includes(word));
-    
-    // Evaluate against Whitelist / Blacklist rules
-    const ruleResult = await evaluateSenderRules(parsed.sender);
-    
-    if (ruleResult === 'WHITELISTED') {
-      // Exclude whitelisted emails from trash recommendations entirely
-      continue;
-    } else if (ruleResult === 'BLACKLISTED') {
-      // Mark directly as safe_to_trash, skipping AI call
-      preProcessedResults.push({
-        id: item.id,
-        threadId: message.threadId,
-        ...parsed,
-        matchedKeywords: matched,
-        aiLabel: 'safe_to_trash',
-        aiScore: 1.0,
-        aiReason: 'Sender matches Blacklist rule.'
-      });
-    } else {
-      candidateMessages.push({ id: item.id, threadId: message.threadId, ...parsed, matchedKeywords: matched });
-    }
+    messages.push({ id: item.id, threadId: message.threadId, ...parsed, matchedKeywords: matched });
   }
-
-  // Run remaining candidate messages through AI classification
-  const aiResults = candidateMessages.length ? await classify(candidateMessages, settings) : [];
-  const processedCandidates = candidateMessages.map((msg, idx) => ({ ...msg, ...aiResults[idx] }));
-
-  return [...preProcessedResults, ...processedCandidates];
+  const ai = await classify(messages, settings);
+  return messages.map((message, index) => ({ ...message, ...ai[index] }));
 }
 
 function escapeGmailQuery(word) {

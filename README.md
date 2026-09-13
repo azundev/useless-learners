@@ -11,8 +11,8 @@
 
 
 ### Team Members
-- Team Lead: [Name] - CUSAT
-- Member 2: [Name] - CUSAT
+- Team Lead: Amar - CUSAT
+- Member 2: Adnan - CUSAT
 
 
 ### Project Description

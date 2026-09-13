@@ -63,12 +63,8 @@ async function loadCloudSettings() {
   try {
     const userId = settings.supabaseSession?.user?.id; if (!userId) return;
     const response = await fetch(`${SUPABASE_URL}/rest/v1/user_settings?select=*&user_id=eq.${encodeURIComponent(userId)}`, { headers: { apikey: settings.supabaseKey, Authorization: `Bearer ${settings.supabaseSession.access_token}` } });
-<<<<<<< HEAD
-    const rows = await response.json(); if (!response.ok) throw new Error(rows.message || `Supabase ${response.status}`);
-=======
     const rows = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(supabaseError(rows, response.status));
->>>>>>> 5e7d2ab (Initial commit)
     if (rows[0]) { settings = { ...settings, keywords: rows[0].keywords || settings.keywords, aiProvider: rows[0].ai_provider || settings.aiProvider, aiModel: rows[0].ai_model || settings.aiModel, maxResults: rows[0].max_results || settings.maxResults }; await chrome.storage.local.set(settings); renderKeywords(); syncForm(); }
     else await saveCloudSettings();
     updateCloudState();
@@ -78,9 +74,6 @@ async function loadCloudSettings() {
 async function saveCloudSettings() {
   const userId = settings.supabaseSession?.user?.id; if (!userId || !settings.supabaseKey) return;
   const response = await fetch(`${SUPABASE_URL}/rest/v1/user_settings`, { method: 'POST', headers: { apikey: settings.supabaseKey, Authorization: `Bearer ${settings.supabaseSession.access_token}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ user_id: userId, keywords: settings.keywords, ai_provider: settings.aiProvider, ai_model: settings.aiModel || null, max_results: settings.maxResults, updated_at: new Date().toISOString() }) });
-<<<<<<< HEAD
-  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.message || data.details || data.hint || `Supabase ${response.status}. Run the user_settings SQL from README.`); }
-=======
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(supabaseError(data, response.status)); }
 }
 
@@ -90,7 +83,6 @@ function supabaseError(data, status) {
     return `Supabase cannot see public.user_settings in ${SUPABASE_URL}. Run supabase/migrations/001_user_settings.sql in that exact project, execute the whole script, then reload the extension.`;
   }
   return message || `Supabase ${status}`;
->>>>>>> 5e7d2ab (Initial commit)
 }
 
 function updateCloudState() { const connected = Boolean(settings.supabaseSession?.access_token && settings.supabaseKey); $('cloudState').textContent = connected ? 'Connected' : 'Not connected'; $('cloudState').className = `cloud-state${connected ? ' connected' : ''}`; }

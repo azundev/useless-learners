@@ -11,7 +11,12 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["identity", "storage"],
+  "permissions": [
+    "identity",
+    "storage",
+    "alarms",
+    "notifications"
+  ],
   "host_permissions": [
     "https://gmail.googleapis.com/*",
     "https://generativelanguage.googleapis.com/*",
@@ -19,11 +24,7 @@
     "https://tecarasdwggresobjoas.supabase.co/*"
   ],
   "oauth2": {
-<<<<<<< HEAD
-    "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
-=======
     "client_id": "36900979677-5b35h019k4vjcvfii3ppv3t4e8gml207.apps.googleusercontent.com",
->>>>>>> 5e7d2ab (Initial commit)
     "scopes": ["https://www.googleapis.com/auth/gmail.modify"]
   }
 }

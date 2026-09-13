@@ -1,11 +1,66 @@
+import { 
+  snoozeThread, 
+  getSnoozedThreads, 
+  clearSnoozedThread, 
+  checkTrashReminder,
+  getEmailLists,
+  addToList,
+  removeFromList,
+  evaluateSenderRules
+} from './utilities.js';
+
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+// Setup periodic alarm for Trash Reminders on installation
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('periodic_trash_check', { periodInMinutes: 1440 });
+});
+
+// Alarm Listener for Snooze Reminders & Periodic Trash Checks
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'periodic_trash_check') {
+    await checkTrashReminder(7);
+  } else if (alarm.name.startsWith('snooze_')) {
+    const threadId = alarm.name.replace('snooze_', '');
+    const snoozedItems = await getSnoozedThreads();
+    const target = snoozedItems.find(item => item.threadId === threadId);
+
+    if (target) {
+      chrome.notifications.create(`notify_${threadId}`, {
+        type: 'basic',
+        iconUrl: 'icon.png',
+        title: 'Read-Later Reminder',
+        message: `Time to revisit: "${target.subject}"`,
+        priority: 2
+      });
+      await clearSnoozedThread(threadId);
+    }
+  }
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
-      if (message.type === 'scan') sendResponse({ ok: true, data: await scan(message.settings) });
-      else if (message.type === 'trash') sendResponse({ ok: true, data: await trash(message.ids) });
-      else throw new Error('Unknown request');
+      if (message.type === 'scan') {
+        sendResponse({ ok: true, data: await scan(message.settings) });
+      } else if (message.type === 'trash') {
+        sendResponse({ ok: true, data: await trash(message.ids) });
+      } else if (message.type === 'snooze') {
+        await snoozeThread(message.threadId, message.subject, message.days);
+        sendResponse({ ok: true });
+      } else if (message.type === 'get_snoozed') {
+        sendResponse({ ok: true, data: await getSnoozedThreads() });
+      } else if (message.type === 'get_lists') {
+        sendResponse({ ok: true, data: await getEmailLists() });
+      } else if (message.type === 'add_list') {
+        await addToList(message.listType, message.entry);
+        sendResponse({ ok: true });
+      } else if (message.type === 'remove_list') {
+        await removeFromList(message.listType, message.entry);
+        sendResponse({ ok: true });
+      } else {
+        throw new Error('Unknown request');
+      }
     } catch (error) {
       sendResponse({ ok: false, error: error.message });
     }
@@ -37,15 +92,42 @@ async function scan(settings) {
   if (!keywords.length) throw new Error('Choose at least one keyword.');
   const q = `({${keywords.map(escapeGmailQuery).join(' OR ')}}) -in:trash -in:spam`;
   const list = await gmail(`/messages?maxResults=${Math.min(settings.maxResults || 50, 100)}&q=${encodeURIComponent(q)}`);
-  const messages = [];
+  
+  const candidateMessages = [];
+  const preProcessedResults = [];
+
   for (const item of list.messages || []) {
     const message = await gmail(`/messages/${item.id}?format=full`);
     const parsed = parseMessage(message);
     const matched = keywords.filter((word) => `${parsed.subject} ${parsed.sender} ${parsed.body}`.toLowerCase().includes(word));
-    messages.push({ id: item.id, threadId: message.threadId, ...parsed, matchedKeywords: matched });
+    
+    // Evaluate against Whitelist / Blacklist rules
+    const ruleResult = await evaluateSenderRules(parsed.sender);
+    
+    if (ruleResult === 'WHITELISTED') {
+      // Exclude whitelisted emails from trash recommendations entirely
+      continue;
+    } else if (ruleResult === 'BLACKLISTED') {
+      // Mark directly as safe_to_trash, skipping AI call
+      preProcessedResults.push({
+        id: item.id,
+        threadId: message.threadId,
+        ...parsed,
+        matchedKeywords: matched,
+        aiLabel: 'safe_to_trash',
+        aiScore: 1.0,
+        aiReason: 'Sender matches Blacklist rule.'
+      });
+    } else {
+      candidateMessages.push({ id: item.id, threadId: message.threadId, ...parsed, matchedKeywords: matched });
+    }
   }
-  const ai = await classify(messages, settings);
-  return messages.map((message, index) => ({ ...message, ...ai[index] }));
+
+  // Run remaining candidate messages through AI classification
+  const aiResults = candidateMessages.length ? await classify(candidateMessages, settings) : [];
+  const processedCandidates = candidateMessages.map((msg, idx) => ({ ...msg, ...aiResults[idx] }));
+
+  return [...preProcessedResults, ...processedCandidates];
 }
 
 function escapeGmailQuery(word) {

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail Safe Cleanup",
+  "version": "0.1.0",
+  "description": "Find keyword-matching Gmail messages, flag possible false positives with AI, and trash only what you approve.",
+  "action": {
+    "default_title": "Gmail Safe Cleanup",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["identity", "storage"],
+  "host_permissions": [
+    "https://gmail.googleapis.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.x.ai/*",
+    "https://tecarasdwggresobjoas.supabase.co/*"
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/gmail.modify"]
+  }
+}

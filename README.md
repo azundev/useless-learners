@@ -4,13 +4,12 @@
 
 ## Basic Details
 
-### Team Name: [Team Name]
+### Team Name: USELESS LEARNES 
 
 ### Team Members
 
-* Team Lead: [Name] - [College]
-* Member 2: [Name] - [College]
-* Member 3: [Name] - [College]
+* Member 1: Amardeep k - CUSAT SOE 
+* Member 2: Adnan A - CUSAT SOE
 
 ### Project Description
 
@@ -85,14 +84,9 @@ For Software:
 
 # Screenshots
 
-![Screenshot1](Add screenshot 1 here with proper name)
-*Extension popup showing keyword selection and Gmail scan options.*
+![alt text](image.png) INTERFACE 1 
+![alt text](image-1.png) INTERFACE 2
 
-![Screenshot2](Add screenshot 2 here with proper name)
-*List of Gmail messages identified for review.*
-
-![Screenshot3](Add screenshot 3 here with proper name)
-*User approval interface before selected messages are moved to Trash.*
 
 # Diagrams
 
@@ -140,25 +134,12 @@ If the AI fails, the extension falls back to manual review. **AI failure never a
 
 The extension uses `users.messages.trash` only after the user selects and confirms messages. It never permanently deletes emails.
 
-### Project Demo
-
-# Video
-
-[Add your demo video link here]
-
-*The video demonstrates signing in, scanning Gmail, reviewing AI-classified messages, selecting unwanted emails, and safely moving approved messages to Trash.*
-
-# Additional Demos
-
-[Add any extra demo materials/links]
 
 ## Team Contributions
 
-* [Name 1]: Chrome extension development, Gmail API and OAuth integration
-* [Name 2]: Gemini/Grok AI safety-check integration and email classification
-* [Name 3]: Supabase authentication, settings synchronization and UI
+* AMARDEEP K: Chrome extension development, Gmail API and OAuth integration settings synchronization and UI
+* ADNAN: Gemini/Grok AI safety-check integration and email classification Supabase authentication, 
 
----
 
 Made with ❤️ at TinkerHub Useless Projects
 

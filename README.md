@@ -10,15 +10,15 @@
 
 
 ### Team Members
-- Team Lead: [Name] - [College]
-- Member 2: [Name] - [College]
-- Member 3: [Name] - [College]
+- Team Lead: [Name] - CUSAT
+- Member 2: [Name] - CUSAT
+
 
 ### Project Description
-[2-3 lines about what your project does]
+A Chrome extension that filters out the spam that conventional emails manage to leave out
 
 ### The Problem (that doesn't exist)
-[What ridiculous problem are you solving?]
+Fixing the problem of not having enough applications to engage with on your Gmail for your coporate
 
 ### The Solution (that nobody asked for)
 [How are you solving it? Keep it fun!]

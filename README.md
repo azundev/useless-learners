@@ -10,39 +10,54 @@
 
 
 ### Team Members
-- Team Lead: [Name] - [College]
-- Member 2: [Name] - [College]
-- Member 3: [Name] - [College]
+- Team Lead: Amardeep K - CUSAT SOE
+- Member 2: Adnan A - CUSAT SOE
 
 ### Project Description
-[2-3 lines about what your project does]
+A Manifest V3 Chrome extension that finds Gmail messages matching user-selected keywords, uses Gemini or Grok as a second-pass safety check, and moves only user-approved messages to Gmail Trash.
 
 ### The Problem (that doesn't exist)
-[What ridiculous problem are you solving?]
+The problem of not having enough app integrations on your Gmail.
 
 ### The Solution (that nobody asked for)
-[How are you solving it? Keep it fun!]
+We used a simple Chrome extensions that reads through your mails to figure out which ones are authentic and which ones aren't,putting them up for review if needed
 
 ## Technical Details
 ### Technologies/Components Used
 For Software:
-- [Languages used]
-- [Frameworks used]
-- [Libraries used]
-- [Tools used]
+- Javascript,HTML,CSS,Typescript
+- React
+- Supabase Client
+- Codex,Gemini
 
-For Hardware:
-- [List main components]
-- [List specifications]
-- [List tools required]
 
 ### Implementation
 For Software:
 # Installation
-[commands]
+Follow these steps to install and run the extension locally in developer mode:
+
+### 1. Clone the Repository
+Clone this repository to your local machine using Git:
+```bash
+git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+cd useless-learners
 
 # Run
-[commands]
+2. Enable Developer Mode in Chrome
+
+    Open Google Chrome.
+
+    Navigate to chrome://extensions/ in your address bar (or go to Menu > Extensions > Manage Extensions).
+
+    Toggle on Developer mode in the top-right corner of the extensions page.
+
+3. Load the Extension
+
+    Click the Load unpacked button in the top-left corner.
+
+    Select the directory/folder where you cloned or extracted this project (the folder containing manifest.json).
+
+    The extension icon will now appear in your browser's extension toolbar.
 
 ### Project Documentation
 For Software:
